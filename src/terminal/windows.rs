@@ -14,7 +14,7 @@ pub struct Terminal {
     stdout: Stdout,
     hstdout: HANDLE,
     hstdin: HANDLE,
-    original_csbi: CONSOLE_SCREEN_BUFFER_INFO,
+    csbi: CONSOLE_SCREEN_BUFFER_INFO,
     original_console_mode: CONSOLE_MODE,
     height: i16,
     width: i16,
@@ -31,7 +31,7 @@ impl Terminal {
             stdout: stdout(),
             hstdout: HANDLE::default(),
             hstdin: HANDLE::default(),
-            original_csbi: CONSOLE_SCREEN_BUFFER_INFO::default(),
+            csbi: CONSOLE_SCREEN_BUFFER_INFO::default(),
             original_console_mode: CONSOLE_MODE::default(),
             height: 0,
             width: 0,
@@ -45,11 +45,11 @@ impl Terminal {
         self.hstdout = unsafe { GetStdHandle(STD_OUTPUT_HANDLE)? };
         self.hstdin = unsafe { GetStdHandle(STD_INPUT_HANDLE)? };
         unsafe {
-            GetConsoleScreenBufferInfo(self.hstdout, &mut self.original_csbi)?;
+            GetConsoleScreenBufferInfo(self.hstdout, &mut self.csbi)?;
             GetConsoleMode(self.hstdout, &mut self.original_console_mode)?;
         }
-        self.width = self.original_csbi.dwSize.X;
-        self.height = self.original_csbi.dwSize.Y;
+        self.width = self.csbi.dwSize.X;
+        self.height = self.csbi.dwSize.Y;
         Ok(())
     }
     pub fn enter_alternate_buffer(&mut self) -> io::Result<()> {
@@ -109,16 +109,26 @@ impl Terminal {
     }
     pub fn test(&mut self) -> io::Result<()> {
         self.enter_alternate_buffer()?;
-        sleep(Duration::from_secs(3));
-        self.move_to(10, 10)?;
-        sleep(Duration::from_secs(3));
-        self.write("This message will be printed in alternate con")?;
+        sleep(Duration::from_secs(1));
+        self.move_to(10, 10)?;        
+        sleep(Duration::from_secs(1));
+        self.write("This message will be printed in alternate console\nTest Message!")?;
+        sleep(Duration::from_secs(1));
+        self.clear(ClearType::ALL, None, None)?;
+        sleep(Duration::from_secs(1));
+        let mut alternate_screen = ScreenBuffer::new(self.haltbuf);
+        let mut next_buffer = alternate_screen.create_buffer()?;
+        
+        for x in 0..self.csbi.dwMaximumWindowSize.X{
+            for y in 0..self.csbi.dwMaximumWindowSize.Y{
+                alternate_screen.write_to_buffer(&mut next_buffer, x, y, '*')?;
+            }
+        }
+        alternate_screen.flush(&next_buffer)?;
         sleep(Duration::from_secs(3));
         self.leave_alternate_buffer()?;
         println!("This message will be printed in default console");
         sleep(Duration::from_secs(3));
         Ok(())
     }
-
-
 }

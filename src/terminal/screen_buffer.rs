@@ -1,4 +1,4 @@
-use windows::Win32::{Foundation::{ GENERIC_READ, GENERIC_WRITE, HANDLE, TRUE}, Security::SECURITY_ATTRIBUTES, Storage::FileSystem::{FILE_SHARE_READ, FILE_SHARE_WRITE}, System::Console::{CreateConsoleScreenBuffer, FillConsoleOutputCharacterA, GetStdHandle, SetConsoleActiveScreenBuffer, SetConsoleCursorPosition, WriteConsoleA, WriteConsoleW, CONSOLE_TEXTMODE_BUFFER, COORD, STD_OUTPUT_HANDLE}};
+use windows::Win32::{Foundation::{ GENERIC_READ, GENERIC_WRITE, HANDLE, TRUE}, Security::SECURITY_ATTRIBUTES, Storage::FileSystem::{FILE_SHARE_READ, FILE_SHARE_WRITE}, System::Console::{CreateConsoleScreenBuffer, FillConsoleOutputCharacterA, GetConsoleScreenBufferInfo, GetStdHandle, SetConsoleActiveScreenBuffer, SetConsoleCursorPosition, WriteConsoleA, WriteConsoleW, CONSOLE_CHARACTER_ATTRIBUTES, CONSOLE_SCREEN_BUFFER_INFO, CONSOLE_TEXTMODE_BUFFER, COORD, FOREGROUND_RED, STD_OUTPUT_HANDLE}};
 use std::{mem::size_of, str};
 use std::io;
 
@@ -70,7 +70,6 @@ impl ScreenBuffer{
                 "Could not parse to utf8 string"
             ))
         };
-
         let utf16:Vec<u16> = utf8.encode_utf16().collect();
         let mut cells_written:u32 = 0;
         unsafe {
@@ -85,5 +84,44 @@ impl ScreenBuffer{
         }
         Ok(chars_wirtten)
     }
+    fn get_csbi(&mut self)->io::Result<CONSOLE_SCREEN_BUFFER_INFO>{
+        let mut csbi = CONSOLE_SCREEN_BUFFER_INFO::default();
+        unsafe {
+            GetConsoleScreenBufferInfo(self.handle, &mut csbi)?
+        }
+        Ok(csbi)
+    }
+    
+    pub fn create_buffer(&mut self) -> io::Result<Vec<CharInfo>>{
+        let csbi = self.get_csbi()?;
+        let buffer_size = csbi.dwMaximumWindowSize.X * csbi.dwMaximumWindowSize.Y;
+        let buffer:Vec<CharInfo> = vec![{
+            CharInfo{
+                char:' ',
+                attribute:CONSOLE_CHARACTER_ATTRIBUTES::default()
+            }
+        }; buffer_size as usize];
+        Ok(buffer)
+    }
+    pub fn write_to_buffer(&mut self,target_buffer:&mut Vec<CharInfo>,x:i16,y:i16,char:char) -> io::Result<()>{
+        let csbi = self.get_csbi()?;
+        if x > csbi.dwMaximumWindowSize.X || y > csbi.dwMaximumWindowSize.Y { return Err(io::Error::new(io::ErrorKind::Other, "Out of buffer range.")) };
+        let idx = (csbi.dwMaximumWindowSize.X * y + x ) as usize;
+        target_buffer[idx].char = char;
+        Ok(())
+    }
+    pub fn flush(&mut self, buffer: &Vec<CharInfo>) -> io::Result<()> {
+        let s: String = buffer.iter().map(|c| c.char).collect();
+        self.move_to(0, 0)?;
+        self.write(s.as_bytes())?;
+        Ok(())
+    }
     //+attribute
+}
+
+
+#[derive(Clone)]
+pub struct CharInfo{
+    char : char,
+    attribute:CONSOLE_CHARACTER_ATTRIBUTES
 }
